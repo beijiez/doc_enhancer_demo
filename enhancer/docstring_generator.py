@@ -1,44 +1,56 @@
 import ast
-from enhancer.parser import find_functions_missing_docstrings
-from enhancer.ai_client import LocalDocstringGenerator
+from enhancer import parser
+from enhancer.ai_client import DocstringGeneratorClient
+
+def clean_docstring(docstring):
+    """Basic clean-up to prevent crashes when writing."""
+    if not docstring:
+        return "TODO: Add description"
+
+    # Remove triple quotes inside the docstring
+    docstring = docstring.replace('"""', "'''")
+    # Remove non-ASCII characters
+    docstring = docstring.encode('ascii', errors='ignore').decode()
+    # Trim whitespace
+    docstring = docstring.strip()
+
+    # If after cleaning, the docstring is empty or too short, fallback
+    if not docstring or len(docstring.split()) < 3:
+        return "TODO: Add description"
+
+    return docstring
 
 def enhance_file(file_path, overwrite=False):
-    source_code, missing = find_functions_missing_docstrings(file_path)
-    if not missing:
-        print("✅ All functions already have good docstrings!")
+    with open(file_path, "r", encoding="utf-8") as f:
+        code = f.read()
+
+    # Parse the file into an AST
+    tree = ast.parse(code)
+
+    # Find functions missing docstrings
+    functions = parser.find_functions_missing_docstrings(tree)
+
+    if not functions:
+        print("✅ No missing docstrings found!")
         return
 
-    generator = LocalDocstringGenerator()
+    # Initialize the AI client
+    ai_client = DocstringGeneratorClient()
 
-    source_lines = source_code.splitlines()
-    updated_lines = source_lines.copy()
+    updated_code = code
+    for func_name, lineno in functions:
+        prompt = f"Write a clear, professional Python docstring for a function named '{func_name}'."
+        generated = ai_client.generate_docstring(prompt)  # Generate docstring with the AI client
+        cleaned = clean_docstring(generated)
+        updated_code = parser.insert_docstring(updated_code, lineno, cleaned)
 
-    for func_name, lineno in missing:
-        print(f"🔍 Generating docstring for '{func_name}' (line {lineno})...")
-        
-        # Extract function code (roughly assume till next function/class or EOF)
-        func_code_lines = []
-        for line in source_lines[lineno - 1:]:
-            if line.strip().startswith(("def ", "class ")) and len(func_code_lines) > 0:
-                break
-            func_code_lines.append(line)
-        func_code = "\n".join(func_code_lines)
-
-        # Ask AI to generate a docstring
-        docstring = generator.generate_docstring(func_code)
-        docstring_block = f'    """{docstring}"""'
-
-        # Insert the docstring after function/class declaration
-        insert_at = lineno
-        updated_lines.insert(insert_at, docstring_block)
-
-    # Final updated code
-    updated_code = "\n".join(updated_lines)
-
+    # Handle saving or overwriting based on 'overwrite' flag
     if overwrite:
-        with open(file_path, "w") as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             f.write(updated_code)
-        print(f"✨ File updated: {file_path}")
+        print(f"✅ Overwrote {file_path} with enhanced docstrings!")
     else:
-        print("\n--- Preview of Updated Code ---\n")
-        print(updated_code)
+        output_path = file_path.replace(".py", "_enhanced.py")
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(updated_code)
+        print(f"✅ Saved enhanced version to {output_path} (original untouched)")

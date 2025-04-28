@@ -1,17 +1,8 @@
 from transformers import pipeline
 
-class LocalDocstringGenerator:
-    def __init__(self, model_name="Salesforce/codegen2-1B"):
-        self.device = 0  # 0 = GPU; -1 = CPU
-        self.pipe = pipeline(
-            "text-generation",
-            model=model_name,
-            device=self.device,
-            torch_dtype="auto",
-            max_new_tokens=128,
-            do_sample=True,
-            temperature=0.5,
-        )
+class DocstringGeneratorClient:
+    def __init__(self, model="gpt2"):  # Or a GPT-Neo model
+        self.pipe = pipeline("text-generation", model=model)
 
     def generate_docstring(self, function_code):
         prompt = (
